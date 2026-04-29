@@ -14,6 +14,12 @@ if ($item_id <= 0) {
 
 $user_id = $_SESSION['user_id'] ?? null;
 $unreadCount = $user_id ? getUnreadCount($conn, $user_id) : 0;
+$currentUser = null;
+
+if (!$user_id) {
+    header("Location: view_items.php?auth_required=1");
+    exit;
+}
 
 $stmt = $conn->prepare("SELECT * FROM items WHERE id = ?");
 if (!$stmt) {
@@ -30,6 +36,17 @@ $stmt->close();
 if (!$item) {
     header("Location: view_items.php");
     exit;
+}
+
+if ($user_id) {
+    $userStmt = $conn->prepare("SELECT id, name, email FROM users WHERE id = ?");
+    if ($userStmt) {
+        $userStmt->bind_param('i', $user_id);
+        $userStmt->execute();
+        $userResult = $userStmt->get_result();
+        $currentUser = $userResult ? $userResult->fetch_assoc() : null;
+        $userStmt->close();
+    }
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['mark_claimed'])) {
@@ -75,6 +92,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['mark_claimed'])) {
     }
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['request_contact'])) {
+    if (!$user_id) {
+        $error = 'Please log in to notify the person who posted this item.';
+    } elseif ((int) $item['user_id'] === (int) $user_id) {
+        $error = 'You cannot send a request for your own item post.';
+    } elseif (($item['claim_status'] ?? 'unclaimed') === 'claimed') {
+        $error = 'This item has already been claimed.';
+    } else {
+        $requesterName = trim((string) ($currentUser['name'] ?? ''));
+        $requesterEmail = trim((string) ($currentUser['email'] ?? ''));
+        $requestMessage = buildItemRequestMessage($requesterName, $requesterEmail, $item['title'] ?? 'item');
+        $targetUserId = (int) $item['user_id'];
+
+        if ($targetUserId <= 0) {
+            $error = 'This item post cannot receive requests right now.';
+        } elseif (hasRecentMatchingNotification($conn, $targetUserId, $requestMessage, 'request', $item_id, 30)) {
+            $error = 'You already sent a recent request for this item. Please give them a little time to respond.';
+        } elseif (createNotification($conn, $targetUserId, $requestMessage, 'request', $item_id)) {
+            $success = 'Your request was sent. The person who posted this item has been notified.';
+        } else {
+            $error = 'Unable to send your request right now. Please try again in a moment.';
+        }
+    }
+}
+
 $dateReported = !empty($item['created_at']) ? date('M d, Y', strtotime($item['created_at'])) : 'Not recorded';
 $claimStatus = $item['claim_status'] ?? 'unclaimed';
 $canShowClaimButton = $user_id
@@ -83,6 +125,13 @@ $canShowClaimButton = $user_id
         ($item['status'] === 'found' && (int) $item['user_id'] !== (int) $user_id)
         || ($item['status'] === 'lost' && (int) $item['user_id'] === (int) $user_id)
     );
+$canRequestContact = $user_id
+    && $claimStatus !== 'claimed'
+    && (int) $item['user_id'] !== (int) $user_id;
+$shouldShowRequestCard = true;
+$requestHelperText = !empty($currentUser['email'])
+    ? 'We will include your account email in the notification so the person who posted this item knows how to contact you.'
+    : 'We will notify the person who posted this item that you think it may belong to you.';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -446,6 +495,17 @@ $canShowClaimButton = $user_id
             box-shadow: 0 12px 28px rgba(114, 125, 115, 0.28);
         }
 
+        .action-note {
+            margin: 0 0 18px;
+            color: var(--muted);
+            line-height: 1.6;
+            font-size: 0.92rem;
+        }
+
+        .action-note:last-child {
+            margin-bottom: 0;
+        }
+
         @media (max-width: 1000px) {
             .detail-grid { grid-template-columns: 1fr; }
         }
@@ -600,6 +660,24 @@ $canShowClaimButton = $user_id
                             </form>
                         <?php endif; ?>
                     </div>
+
+                    <?php if ($shouldShowRequestCard): ?>
+                        <div class="detail-card">
+                            <h3>Poke Poster</h3>
+                            <?php if (!$user_id): ?>
+                                <p class="action-note">Log in first so we can notify the person who posted this found item for you.</p>
+                            <?php elseif ((int) $item['user_id'] === (int) $user_id): ?>
+                                <p class="action-note">This is your own found-item post, so there is no need to poke yourself.</p>
+                            <?php elseif ($claimStatus === 'claimed'): ?>
+                                <p class="action-note">This item has already been claimed, so poking the poster is disabled.</p>
+                            <?php else: ?>
+                                <p class="action-note"><?php echo htmlspecialchars($requestHelperText); ?></p>
+                                <form method="POST">
+                                    <button type="submit" name="request_contact" value="1" class="action-btn">Poke poster</button>
+                                </form>
+                            <?php endif; ?>
+                        </div>
+                    <?php endif; ?>
                 </div>
             </div>
         </div>

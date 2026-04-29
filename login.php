@@ -472,6 +472,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             font-size: 0.95rem;
         }
 
+        .guest-entry {
+            display: grid;
+            gap: 10px;
+        }
+
+        .guest-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            padding: 16px 18px;
+            border-radius: 18px;
+            text-decoration: none;
+            background: rgba(185, 178, 138, 0.16);
+            border: 1px solid rgba(114, 125, 115, 0.16);
+            color: var(--primary-dark);
+            font-weight: 800;
+            transition: transform 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .guest-button:hover {
+            transform: translateY(-2px);
+            background: rgba(185, 178, 138, 0.24);
+            box-shadow: 0 16px 28px rgba(114, 125, 115, 0.12);
+        }
+
+        .guest-note {
+            margin: 0;
+            text-align: center;
+            color: var(--muted);
+            font-size: 0.9rem;
+            line-height: 1.6;
+        }
+
         .register-link a {
             color: var(--primary-dark);
             font-weight: 700;
@@ -637,6 +671,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <span class="button-loader" aria-hidden="true"></span>
                             </span>
                         </button>
+                        <div class="guest-entry">
+                            <a href="view_items.php" class="guest-button">Continue as Guest</a>
+                            <p class="guest-note">Browse posted items without an account. Full item details and contact actions still require login or registration.</p>
+                        </div>
                         <div class="register-link">
                             Don&apos;t have an account? <a href="register.php">Create one here</a>
                         </div>

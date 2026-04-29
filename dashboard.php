@@ -3,13 +3,8 @@ session_start();
 include 'config.php';
 include 'notifications-helper.php';
 
-if (!isset($_SESSION['user_id'])) {
-    header("Location: login.php");
-    exit;
-}
-
-// Get unread notification count
-$unreadCount = getUnreadCount($conn, $_SESSION['user_id']);
+$user_id = $_SESSION['user_id'] ?? null;
+$unreadCount = $user_id ? getUnreadCount($conn, $user_id) : 0;
 
 /* ========== ANALYTICS DATA ========== */
 
@@ -17,6 +12,7 @@ $unreadCount = getUnreadCount($conn, $_SESSION['user_id']);
 $lost = $conn->query("SELECT COUNT(*) as total FROM items WHERE status='lost'")->fetch_assoc()['total'];
 $found = $conn->query("SELECT COUNT(*) as total FROM items WHERE status='found'")->fetch_assoc()['total'];
 $total = $conn->query("SELECT COUNT(*) as total FROM items")->fetch_assoc()['total'];
+$claimed = $conn->query("SELECT COUNT(*) as total FROM items WHERE claim_status='claimed'")->fetch_assoc()['total'];
 
 // Recovery rate
 $recoveryRate = ($lost > 0) ? round(($found / $lost) * 100, 1) : 0;
@@ -518,6 +514,10 @@ if ($topLostCat) {
             gap: 18px;
         }
 
+        .stats-grid.primary {
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+        }
+
         .stat-tile {
             padding: 24px;
             border-radius: 28px;
@@ -555,6 +555,10 @@ if ($topLostCat) {
 
         .stat-tile.found .value {
             color: var(--found-text);
+        }
+
+        .stat-tile.claimed .value {
+            color: #4f8a5b;
         }
 
         .dashboard-grid {
@@ -804,12 +808,17 @@ if ($topLostCat) {
             <div style="display: flex; align-items: center; gap: 18px; flex-wrap: wrap;">
                 <nav class="nav-links">
                     <a href="dashboard.php" class="active">Dashboard</a>
-                    <a href="post_item.php">Post Item</a>
+                    <a href="<?php echo $user_id ? 'post_item.php' : 'login.php'; ?>">Post Item</a>
                     <a href="view_items.php">Items</a>
-                    <a href="logout.php">Logout</a>
+                    <?php if ($user_id): ?>
+                        <a href="logout.php">Logout</a>
+                    <?php else: ?>
+                        <a href="login.php">Login</a>
+                        <a href="register.php">Register</a>
+                    <?php endif; ?>
                 </nav>
                 
-                <!-- Notification Bell -->
+                <?php if ($user_id): ?>
                 <div style="position: relative;">
                     <div class="notification-bell" id="notificationBell">
                         <span class="notification-bell-icon">🔔</span>
@@ -831,6 +840,7 @@ if ($topLostCat) {
                         </div>
                     </div>
                 </div>
+                <?php endif; ?>
             </div>
         </header>
 
@@ -856,7 +866,7 @@ if ($topLostCat) {
             </section>
 
             <!-- OVERVIEW CARDS -->
-            <section class="stats-grid">
+            <section class="stats-grid primary">
                 <article class="stat-tile">
                     <span class="label">Total Items</span>
                     <span class="value"><?php echo $total; ?></span>
@@ -873,6 +883,12 @@ if ($topLostCat) {
                     <span class="label">Found Items</span>
                     <span class="value"><?php echo $found; ?></span>
                     <p>Recovered belongings recorded for identification.</p>
+                </article>
+
+                <article class="stat-tile claimed">
+                    <span class="label">Claimed Items</span>
+                    <span class="value"><?php echo $claimed; ?></span>
+                    <p>Posts that have already been resolved and moved into the claimed area.</p>
                 </article>
             </section>
 

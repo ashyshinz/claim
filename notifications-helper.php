@@ -253,6 +253,122 @@ function buildFinderClaimMessage($itemTitle) {
     return "The item '{$safeTitle}' you reported has been claimed by its owner.";
 }
 
+function buildItemRequestMessage($requesterName, $requesterEmail, $itemTitle) {
+    $safeName = trim((string) $requesterName) !== '' ? trim((string) $requesterName) : 'A user';
+    $safeTitle = trim((string) $itemTitle) !== '' ? trim((string) $itemTitle) : 'your posted item';
+    $safeEmail = trim((string) $requesterEmail);
+
+    if ($safeEmail !== '') {
+        return "{$safeName} thinks '{$safeTitle}' may belong to them and asked you to get in touch. You can reply to {$safeEmail}.";
+    }
+
+    return "{$safeName} thinks '{$safeTitle}' may belong to them and asked you to get in touch.";
+}
+
+function hasRecentMatchingNotification($conn, $user_id, $message, $type, $related_item_id = null, $minutes = 30) {
+    $user_id = (int) $user_id;
+    $message = (string) $message;
+    $type = (string) $type;
+    $minutes = max(1, (int) $minutes);
+
+    $hasTypeColumn = notificationsColumnExists($conn, 'type');
+    $hasRelatedItemColumn = notificationsColumnExists($conn, 'related_item_id');
+
+    $sql = "SELECT id FROM notifications WHERE user_id = ? AND message = ?";
+    $types = 'is';
+    $params = [$user_id, $message];
+
+    if ($hasTypeColumn) {
+        $sql .= " AND type = ?";
+        $types .= 's';
+        $params[] = $type;
+    }
+
+    if ($hasRelatedItemColumn) {
+        if ($related_item_id === null) {
+            $sql .= " AND related_item_id IS NULL";
+        } else {
+            $sql .= " AND related_item_id = ?";
+            $types .= 'i';
+            $params[] = (int) $related_item_id;
+        }
+    }
+
+    $sql .= " AND created_at >= DATE_SUB(NOW(), INTERVAL ? MINUTE) LIMIT 1";
+    $types .= 'i';
+    $params[] = $minutes;
+
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        return false;
+    }
+
+    $stmt->bind_param($types, ...$params);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $exists = $result && $result->num_rows > 0;
+    $stmt->close();
+
+    return $exists;
+}
+
+function buildNewItemPostedMessage($itemTitle, $status, $location) {
+    $safeTitle = trim((string) $itemTitle) !== '' ? trim((string) $itemTitle) : 'an item';
+    $safeStatus = strtolower(trim((string) $status)) === 'lost' ? 'lost' : 'found';
+    $safeLocation = trim((string) $location);
+
+    if ($safeLocation !== '') {
+        return "A new {$safeStatus} item was posted: '{$safeTitle}' near {$safeLocation}. Tap to view it.";
+    }
+
+    return "A new {$safeStatus} item was posted: '{$safeTitle}'. Tap to view it.";
+}
+
+function notifyUsersAboutNewItem($conn, $item, $excludeUserId = null) {
+    $itemId = (int) ($item['id'] ?? 0);
+    if ($itemId <= 0) {
+        return;
+    }
+
+    $message = buildNewItemPostedMessage(
+        $item['title'] ?? '',
+        $item['status'] ?? '',
+        $item['specific_location'] ?? ''
+    );
+
+    $excludeUserId = $excludeUserId !== null ? (int) $excludeUserId : null;
+    $sql = "SELECT id FROM users";
+
+    if ($excludeUserId !== null && $excludeUserId > 0) {
+        $sql .= " WHERE id <> ?";
+    }
+
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        return;
+    }
+
+    if ($excludeUserId !== null && $excludeUserId > 0) {
+        $stmt->bind_param('i', $excludeUserId);
+    }
+
+    $stmt->execute();
+    $result = $stmt->get_result();
+
+    if ($result) {
+        while ($row = $result->fetch_assoc()) {
+            $targetUserId = (int) ($row['id'] ?? 0);
+            if ($targetUserId <= 0) {
+                continue;
+            }
+
+            createNotification($conn, $targetUserId, $message, 'system', $itemId);
+        }
+    }
+
+    $stmt->close();
+}
+
 function normalizeMatchText($value) {
     $value = strtolower(trim((string) $value));
     $value = preg_replace('/[^a-z0-9\s]/', ' ', $value);

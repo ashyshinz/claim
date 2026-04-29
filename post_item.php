@@ -112,6 +112,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'user_id' => $user_id,
             ];
 
+            notifyUsersAboutNewItem($conn, $newItem, $user_id);
+
             $matchSuggestions = findTopMatches($conn, $newItem);
 
             if (count($matchSuggestions) > 0) {

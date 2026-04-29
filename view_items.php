@@ -6,20 +6,47 @@ include 'notifications-helper.php';
 // Get current user's ID for notification count
 $user_id = $_SESSION['user_id'] ?? null;
 $unreadCount = $user_id ? getUnreadCount($conn, $user_id) : 0;
+$showAuthRequiredModal = isset($_GET['auth_required']) && $_GET['auth_required'] === '1';
 
 $status = $_GET['status'] ?? '';
+$ownerFilter = $_GET['owner'] ?? '';
 
 $result = null;
 
-if ($status !== '') {
-    $stmt = $conn->prepare("SELECT * FROM items WHERE status = ?");
+if ($ownerFilter === 'me' && $user_id) {
+    if ($status === 'claimed') {
+        $stmt = $conn->prepare("SELECT * FROM items WHERE user_id = ? AND claim_status = 'claimed' ORDER BY id DESC");
+        if ($stmt) {
+            $stmt->bind_param('i', $user_id);
+            $stmt->execute();
+            $result = $stmt->get_result();
+        }
+    } elseif ($status !== '') {
+        $stmt = $conn->prepare("SELECT * FROM items WHERE user_id = ? AND status = ? AND (claim_status IS NULL OR claim_status <> 'claimed') ORDER BY id DESC");
+        if ($stmt) {
+            $stmt->bind_param('is', $user_id, $status);
+            $stmt->execute();
+            $result = $stmt->get_result();
+        }
+    } else {
+        $stmt = $conn->prepare("SELECT * FROM items WHERE user_id = ? AND (claim_status IS NULL OR claim_status <> 'claimed') ORDER BY id DESC");
+        if ($stmt) {
+            $stmt->bind_param('i', $user_id);
+            $stmt->execute();
+            $result = $stmt->get_result();
+        }
+    }
+} elseif ($status === 'claimed') {
+    $result = $conn->query("SELECT * FROM items WHERE claim_status = 'claimed' ORDER BY id DESC");
+} elseif ($status !== '') {
+    $stmt = $conn->prepare("SELECT * FROM items WHERE status = ? AND (claim_status IS NULL OR claim_status <> 'claimed') ORDER BY id DESC");
     if ($stmt) {
         $stmt->bind_param('s', $status);
         $stmt->execute();
         $result = $stmt->get_result();
     }
 } else {
-    $result = $conn->query("SELECT * FROM items");
+    $result = $conn->query("SELECT * FROM items WHERE (claim_status IS NULL OR claim_status <> 'claimed') ORDER BY id DESC");
 }
 
 $items = [];
@@ -399,20 +426,39 @@ if ($result) {
         }
 
         .toolbar {
-            display: flex;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(320px, 520px);
+            align-items: start;
+            gap: 22px;
+            padding: 28px;
+            border-radius: 30px;
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(252, 251, 247, 0.86));
+            border: 1px solid rgba(124, 144, 172, 0.12);
+            box-shadow: 0 22px 46px rgba(18, 32, 51, 0.06);
+        }
+
+        .toolbar-copy {
+            display: grid;
+            gap: 10px;
+            align-content: start;
+        }
+
+        .toolbar-kicker {
+            display: inline-flex;
             align-items: center;
-            justify-content: space-between;
-            gap: 18px;
-            flex-wrap: wrap;
-            padding: 22px 24px;
-            border-radius: 28px;
-            background: rgba(255, 255, 255, 0.78);
-            border: 1px solid rgba(124, 144, 172, 0.14);
-            box-shadow: 0 18px 40px rgba(18, 32, 51, 0.06);
+            width: fit-content;
+            padding: 8px 12px;
+            border-radius: 999px;
+            background: rgba(170, 185, 154, 0.14);
+            color: var(--primary-dark);
+            font-size: 0.76rem;
+            font-weight: 800;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
         }
 
         .toolbar-copy h2 {
-            margin: 0 0 8px;
+            margin: 0;
             font-size: 1.8rem;
             line-height: 1;
             letter-spacing: -0.03em;
@@ -430,21 +476,91 @@ if ($result) {
             flex-wrap: wrap;
         }
 
+        .toolbar-actions {
+            display: grid;
+            gap: 14px;
+            padding: 18px;
+            border-radius: 24px;
+            background: rgba(255, 255, 255, 0.88);
+            border: 1px solid rgba(114, 125, 115, 0.12);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+        }
+
+        .toolbar-search-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .toolbar-label {
+            flex-shrink: 0;
+            color: var(--muted);
+            font-size: 0.82rem;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .toolbar-divider {
+            height: 1px;
+            background: linear-gradient(90deg, rgba(114, 125, 115, 0.12), rgba(114, 125, 115, 0.04));
+        }
+
         .filter-chip {
-            padding: 11px 16px;
+            padding: 11px 18px;
             border-radius: 999px;
             text-decoration: none;
-            color: #2b3950;
+            color: #44536c;
             font-weight: 700;
-            background: rgba(170, 185, 154, 0.12);
-            transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
+            background: #f5f4ef;
+            border: 1px solid rgba(114, 125, 115, 0.08);
+            transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
         }
 
         .filter-chip:hover,
         .filter-chip.active {
-            background: rgba(185, 178, 138, 0.24);
+            background: rgba(170, 185, 154, 0.18);
             color: var(--primary-dark);
+            border-color: rgba(114, 125, 115, 0.16);
+            box-shadow: 0 10px 18px rgba(79, 88, 80, 0.08);
             transform: translateY(-1px);
+        }
+
+        .search-wrap {
+            position: relative;
+            min-width: 0;
+            width: 100%;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 14px 18px 14px 44px;
+            border-radius: 18px;
+            border: 1px solid rgba(114, 125, 115, 0.14);
+            background: #fcfcf9;
+            color: var(--text);
+            font: inherit;
+            outline: none;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .search-input::placeholder {
+            color: rgba(114, 125, 115, 0.82);
+        }
+
+        .search-input:focus {
+            border-color: rgba(114, 125, 115, 0.36);
+            box-shadow: 0 0 0 4px rgba(170, 185, 154, 0.18);
+        }
+
+        .search-icon {
+            position: absolute;
+            top: 50%;
+            left: 16px;
+            transform: translateY(-50%);
+            color: var(--muted);
+            pointer-events: none;
+            font-size: 0.95rem;
         }
 
         .items-grid {
@@ -454,9 +570,16 @@ if ($result) {
         }
 
         .item-card-link {
-            text-decoration: none;
-            color: inherit;
             display: grid;
+        }
+
+        .item-card-button {
+            padding: 0;
+            border: 0;
+            background: none;
+            cursor: pointer;
+            font: inherit;
+            text-align: left;
         }
 
         .item-card {
@@ -469,6 +592,19 @@ if ($result) {
             box-shadow: 0 18px 42px rgba(79, 88, 80, 0.07);
             transition: transform 0.2s ease, box-shadow 0.2s ease;
             height: 100%;
+        }
+
+        .item-card.own-post {
+            background:
+                linear-gradient(180deg, rgba(238, 243, 232, 0.98), rgba(248, 251, 245, 0.94));
+            border-color: rgba(114, 125, 115, 0.28);
+            box-shadow:
+                0 18px 42px rgba(79, 88, 80, 0.08),
+                inset 0 0 0 1px rgba(170, 185, 154, 0.18);
+        }
+
+        .item-card.own-post .item-image {
+            border-color: rgba(114, 125, 115, 0.2);
         }
 
         .item-image {
@@ -497,10 +633,31 @@ if ($result) {
             gap: 14px;
         }
 
+        .item-heading {
+            display: grid;
+            gap: 10px;
+            min-width: 0;
+        }
+
         .item-title {
             margin: 0;
             font-size: 1.22rem;
             line-height: 1.2;
+        }
+
+        .owner-badge {
+            display: inline-flex;
+            align-items: center;
+            width: fit-content;
+            padding: 7px 12px;
+            border-radius: 999px;
+            background: linear-gradient(135deg, rgba(114, 125, 115, 0.18), rgba(170, 185, 154, 0.3));
+            color: #5f6a60;
+            border: 1px solid rgba(114, 125, 115, 0.2);
+            font-size: 0.78rem;
+            font-weight: 800;
+            letter-spacing: 0.03em;
+            text-transform: uppercase;
         }
 
         .status-badge {
@@ -539,6 +696,14 @@ if ($result) {
             font-size: 0.92rem;
         }
 
+        .card-actions {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
         .category-pill {
             display: inline-flex;
             align-items: center;
@@ -548,6 +713,106 @@ if ($result) {
             background: rgba(185, 178, 138, 0.2);
             color: var(--primary-dark);
             font-weight: 700;
+        }
+
+        .item-action-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 42px;
+            padding: 10px 16px;
+            border-radius: 999px;
+            border: 0;
+            text-decoration: none;
+            font: inherit;
+            font-weight: 700;
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease, color 0.2s ease;
+        }
+
+        .item-action-link:hover {
+            transform: translateY(-1px);
+        }
+
+        .item-action-link.secondary {
+            color: var(--primary-dark);
+            background: rgba(185, 178, 138, 0.18);
+        }
+
+        .item-action-link.primary {
+            color: #ffffff;
+            background: linear-gradient(135deg, var(--primary-dark), var(--primary));
+            box-shadow: 0 8px 20px rgba(114, 125, 115, 0.18);
+        }
+
+        .auth-modal {
+            position: fixed;
+            inset: 0;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background: rgba(44, 52, 45, 0.36);
+            backdrop-filter: blur(6px);
+            z-index: 1200;
+        }
+
+        .auth-modal.show {
+            display: flex;
+        }
+
+        .auth-modal-card {
+            width: min(520px, 100%);
+            padding: 30px;
+            border-radius: 28px;
+            background: rgba(255, 255, 255, 0.98);
+            border: 1px solid rgba(114, 125, 115, 0.14);
+            box-shadow: 0 24px 60px rgba(79, 88, 80, 0.2);
+        }
+
+        .auth-modal-card h3 {
+            margin: 0 0 10px;
+            font-size: 1.8rem;
+            letter-spacing: -0.03em;
+        }
+
+        .auth-modal-card p {
+            margin: 0 0 20px;
+            color: var(--muted);
+            line-height: 1.7;
+        }
+
+        .auth-modal-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .auth-modal-link,
+        .auth-modal-close {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 44px;
+            padding: 12px 18px;
+            border-radius: 999px;
+            border: 0;
+            text-decoration: none;
+            font: inherit;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .auth-modal-link.primary {
+            background: linear-gradient(135deg, var(--primary-dark), var(--primary));
+            color: #ffffff;
+        }
+
+        .auth-modal-link.secondary,
+        .auth-modal-close {
+            background: rgba(185, 178, 138, 0.18);
+            color: var(--primary-dark);
         }
 
         .empty-state {
@@ -569,6 +834,14 @@ if ($result) {
             margin: 0;
             color: var(--muted);
             line-height: 1.7;
+        }
+
+        .search-empty-state {
+            display: none;
+        }
+
+        .search-empty-state.show {
+            display: block;
         }
 
         .page-shell > *,
@@ -630,6 +903,26 @@ if ($result) {
                 padding: 22px;
                 border-radius: 24px;
             }
+
+            .toolbar-actions {
+                width: 100%;
+                padding: 16px;
+            }
+
+            .search-wrap {
+                width: 100%;
+                min-width: 0;
+            }
+
+            .toolbar {
+                grid-template-columns: 1fr;
+                padding: 22px;
+            }
+
+            .toolbar-search-row {
+                flex-direction: column;
+                align-items: stretch;
+            }
         }
 
         @media (prefers-reduced-motion: reduce) {
@@ -646,30 +939,76 @@ if ($result) {
     </style>
     <script>
         document.addEventListener('DOMContentLoaded', () => {
+            const isLoggedIn = <?php echo $user_id ? 'true' : 'false'; ?>;
             const notificationBell = document.getElementById('notificationBell');
             const notificationDropdown = document.getElementById('notificationDropdown');
             const notificationList = document.getElementById('notificationList');
             const markAllReadBtn = document.getElementById('markAllReadBtn');
             let notificationBadge = document.getElementById('notificationBadge');
+            const authModal = document.getElementById('authModal');
+            const authModalClose = document.getElementById('authModalClose');
+            const detailButtons = Array.from(document.querySelectorAll('.details-trigger'));
 
-            if (!notificationBell || !notificationDropdown || !notificationList) {
-                return;
+            const openAuthModal = () => {
+                if (authModal) {
+                    authModal.classList.add('show');
+                }
+            };
+
+            const closeAuthModal = () => {
+                if (authModal) {
+                    authModal.classList.remove('show');
+                }
+            };
+
+            detailButtons.forEach((button) => {
+                button.addEventListener('click', () => {
+                    const detailUrl = button.dataset.detailUrl;
+                    if (!detailUrl) {
+                        return;
+                    }
+
+                    if (isLoggedIn) {
+                        window.location.href = detailUrl;
+                        return;
+                    }
+
+                    openAuthModal();
+                });
+            });
+
+            if (authModalClose) {
+                authModalClose.addEventListener('click', closeAuthModal);
             }
 
-            notificationBell.addEventListener('click', async (e) => {
-                e.stopPropagation();
-                notificationDropdown.classList.toggle('active');
-                if (notificationDropdown.classList.contains('active')) {
-                    await loadNotifications();
-                    await markAllNotificationsRead();
-                }
-            });
+            if (authModal) {
+                authModal.addEventListener('click', (event) => {
+                    if (event.target === authModal) {
+                        closeAuthModal();
+                    }
+                });
+            }
 
-            document.addEventListener('click', (e) => {
-                if (!e.target.closest('.notification-bell') && !e.target.closest('.notification-dropdown')) {
-                    notificationDropdown.classList.remove('active');
-                }
-            });
+            if (<?php echo $showAuthRequiredModal ? 'true' : 'false'; ?>) {
+                openAuthModal();
+            }
+
+            if (notificationBell && notificationDropdown && notificationList) {
+                notificationBell.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    notificationDropdown.classList.toggle('active');
+                    if (notificationDropdown.classList.contains('active')) {
+                        await loadNotifications();
+                        await markAllNotificationsRead();
+                    }
+                });
+
+                document.addEventListener('click', (e) => {
+                    if (!e.target.closest('.notification-bell') && !e.target.closest('.notification-dropdown')) {
+                        notificationDropdown.classList.remove('active');
+                    }
+                });
+            }
 
             function loadNotifications() {
                 return fetch('notifications-api.php?action=get-notifications')
@@ -701,14 +1040,16 @@ if ($result) {
                 `).join('');
             }
 
-            notificationList.addEventListener('click', (e) => {
-                const item = e.target.closest('.notification-item');
-                if (!item) {
-                    return;
-                }
+            if (notificationList) {
+                notificationList.addEventListener('click', (e) => {
+                    const item = e.target.closest('.notification-item');
+                    if (!item) {
+                        return;
+                    }
 
-                openNotification(item.dataset.notificationId, item.dataset.relatedItemId);
-            });
+                    openNotification(item.dataset.notificationId, item.dataset.relatedItemId);
+                });
+            }
 
             function openNotification(notificationId, relatedItemId) {
                 fetch('notifications-api.php?action=mark-read', {
@@ -769,7 +1110,44 @@ if ($result) {
                 return '🔔';
             }
 
-            loadNotifications();
+            if (notificationBell && notificationDropdown && notificationList) {
+                loadNotifications();
+            }
+
+            const searchInput = document.getElementById('itemSearch');
+            const itemCards = Array.from(document.querySelectorAll('.item-card-link'));
+            const visibleItemsValue = document.getElementById('visibleItemsValue');
+            const searchEmptyState = document.getElementById('searchEmptyState');
+            const itemsGrid = document.getElementById('itemsGrid');
+
+            if (searchInput && itemCards.length > 0 && visibleItemsValue) {
+                const applySearch = () => {
+                    const query = searchInput.value.trim().toLowerCase();
+                    let visibleCount = 0;
+
+                    itemCards.forEach((card) => {
+                        const searchText = card.dataset.search || '';
+                        const matches = query === '' || searchText.includes(query);
+                        card.style.display = matches ? '' : 'none';
+                        if (matches) {
+                            visibleCount += 1;
+                        }
+                    });
+
+                    visibleItemsValue.textContent = visibleCount;
+
+                    if (searchEmptyState) {
+                        searchEmptyState.classList.toggle('show', visibleCount === 0);
+                    }
+
+                    if (itemsGrid) {
+                        itemsGrid.style.display = visibleCount === 0 ? 'none' : 'grid';
+                    }
+                };
+
+                searchInput.addEventListener('input', applySearch);
+                applySearch();
+            }
         });
     </script>
 </head>
@@ -783,12 +1161,17 @@ if ($result) {
             <div style="display: flex; align-items: center; gap: 18px; flex-wrap: wrap;">
                 <nav class="nav-links">
                     <a href="dashboard.php">Dashboard</a>
-                    <a href="post_item.php">Post Item</a>
+                    <a href="<?php echo $user_id ? 'post_item.php' : 'login.php'; ?>">Post Item</a>
                     <a href="view_items.php" class="active">Items</a>
-                    <a href="logout.php">Logout</a>
+                    <?php if ($user_id): ?>
+                        <a href="logout.php">Logout</a>
+                    <?php else: ?>
+                        <a href="login.php">Login</a>
+                        <a href="register.php">Register</a>
+                    <?php endif; ?>
                 </nav>
                 
-                <!-- Notification Bell -->
+                <?php if ($user_id): ?>
                 <div style="position: relative;">
                     <div class="notification-bell" id="notificationBell">
                         <span class="notification-bell-icon">🔔</span>
@@ -810,6 +1193,7 @@ if ($result) {
                         </div>
                     </div>
                 </div>
+                <?php endif; ?>
             </div>
         </header>
 
@@ -824,12 +1208,20 @@ if ($result) {
                 <div class="hero-stats">
                     <div class="stat-card">
                         <strong>Current filter</strong>
-                        <span class="value"><?php echo $status ? htmlspecialchars(ucfirst($status)) : 'All'; ?></span>
-                        <p>Switch between lost, found, or all records to focus on the cases you need.</p>
+                        <span class="value">
+                            <?php
+                                if ($ownerFilter === 'me' && $user_id) {
+                                    echo 'Your Posts';
+                                } else {
+                                    echo $status ? htmlspecialchars(ucfirst($status)) : 'All';
+                                }
+                            ?>
+                        </span>
+                        <p>Switch between active lost, found, or claimed records to focus on the cases you need.</p>
                     </div>
                     <div class="stat-card">
                         <strong>Visible items</strong>
-                        <span class="value"><?php echo count($items); ?></span>
+                        <span class="value" id="visibleItemsValue"><?php echo count($items); ?></span>
                         <p>Each card shows the title, description, category, and current report status.</p>
                     </div>
                 </div>
@@ -837,31 +1229,80 @@ if ($result) {
 
             <section class="toolbar">
                 <div class="toolbar-copy">
+                    <span class="toolbar-kicker">Controls</span>
                     <h2>Browse Items</h2>
-                    <p>Filter the list below and review reports in a more readable card layout.</p>
+                    <p>Filter the list below and keep active posts separate from items that have already been claimed.</p>
                 </div>
-                <div class="filters">
-                    <a class="filter-chip <?php echo $status === '' ? 'active' : ''; ?>" href="view_items.php">All</a>
-                    <a class="filter-chip <?php echo $status === 'lost' ? 'active' : ''; ?>" href="view_items.php?status=lost">Lost</a>
-                    <a class="filter-chip <?php echo $status === 'found' ? 'active' : ''; ?>" href="view_items.php?status=found">Found</a>
+                <div class="toolbar-actions">
+                    <div class="toolbar-search-row">
+                        <span class="toolbar-label">Search</span>
+                        <div class="search-wrap">
+                            <span class="search-icon">🔎</span>
+                            <input
+                                type="search"
+                                id="itemSearch"
+                                class="search-input"
+                                placeholder="Search by title, category, description, status, or location"
+                                aria-label="Search items"
+                            >
+                        </div>
+                    </div>
+                    <div class="toolbar-divider"></div>
+                    <div class="filters">
+                        <a class="filter-chip <?php echo $status === '' ? 'active' : ''; ?>" href="view_items.php">All</a>
+                        <a class="filter-chip <?php echo $status === 'lost' ? 'active' : ''; ?>" href="view_items.php?status=lost">Lost</a>
+                        <a class="filter-chip <?php echo $status === 'found' ? 'active' : ''; ?>" href="view_items.php?status=found">Found</a>
+                        <a class="filter-chip <?php echo $status === 'claimed' ? 'active' : ''; ?>" href="view_items.php?status=claimed">Claimed</a>
+                        <?php if ($user_id): ?>
+                            <a class="filter-chip <?php echo $ownerFilter === 'me' ? 'active' : ''; ?>" href="view_items.php?owner=me">Your Posts</a>
+                        <?php endif; ?>
+                    </div>
                 </div>
             </section>
 
             <?php if (count($items) > 0): ?>
-                <section class="items-grid">
+                <section class="items-grid" id="itemsGrid">
                     <?php foreach ($items as $row): ?>
-                        <a href="item-details.php?id=<?php echo (int)$row['id']; ?>" class="item-card-link">
-                            <article class="item-card">
+                        <?php
+                            $searchContent = implode(' ', [
+                                $row['title'] ?? '',
+                                $row['description'] ?? '',
+                                $row['category'] ?? '',
+                                $row['status'] ?? '',
+                                $row['specific_location'] ?? '',
+                                $row['keywords'] ?? '',
+                            ]);
+                            $detailsUrl = 'item-details.php?id=' . (int) $row['id'];
+                            $isOwnPost = $user_id && ((int) ($row['user_id'] ?? 0) === (int) $user_id);
+                            $canPokePoster = (($row['claim_status'] ?? 'unclaimed') !== 'claimed')
+                                && (!$isOwnPost);
+                        ?>
+                        <article
+                            class="item-card-link"
+                            data-search="<?php echo htmlspecialchars(strtolower($searchContent)); ?>"
+                        >
+                            <div class="item-card <?php echo $isOwnPost ? 'own-post' : ''; ?>">
                                 <?php if (!empty($row['image']) && file_exists(__DIR__ . '/uploads/' . $row['image'])): ?>
-                                    <img
-                                        class="item-image"
-                                        src="<?php echo htmlspecialchars('uploads/' . $row['image']); ?>"
-                                        alt="<?php echo htmlspecialchars($row['title']); ?>"
-                                    >
+                                    <button type="button" class="item-card-button details-trigger" data-detail-url="<?php echo htmlspecialchars($detailsUrl); ?>">
+                                        <img
+                                            class="item-image"
+                                            src="<?php echo htmlspecialchars('uploads/' . $row['image']); ?>"
+                                            alt="<?php echo htmlspecialchars($row['title']); ?>"
+                                        >
+                                    </button>
                                 <?php endif; ?>
 
                                 <div class="item-top">
-                                    <h3 class="item-title"><?php echo htmlspecialchars($row['title']); ?></h3>
+                                    <div class="item-heading">
+                                        <h3 class="item-title">
+                                            <button type="button" class="item-card-button details-trigger" data-detail-url="<?php echo htmlspecialchars($detailsUrl); ?>" style="color: inherit; text-decoration: none;">
+                                                <?php echo htmlspecialchars($row['title']); ?>
+                                            </button>
+                                        </h3>
+                                        <?php if ($isOwnPost): ?>
+                                            <span class="owner-badge">Your Post</span>
+                                        <?php endif; ?>
+                                    </div>
                                     <span class="status-badge <?php echo htmlspecialchars($row['status']); ?>">
                                         <?php echo htmlspecialchars($row['status']); ?>
                                     </span>
@@ -871,21 +1312,42 @@ if ($result) {
                                     <?php echo htmlspecialchars(substr($row['description'] ?: 'No description provided.', 0, 120)); ?>...
                                 </p>
 
-                                <div class="meta-row">
+                                <div class="card-actions">
                                     <span class="category-pill"><?php echo htmlspecialchars($row['category']); ?></span>
-                                    <span>View details →</span>
+                                    <div class="meta-row">
+                                        <button type="button" class="item-action-link secondary details-trigger" data-detail-url="<?php echo htmlspecialchars($detailsUrl); ?>">View details</button>
+                                        <?php if ($canPokePoster): ?>
+                                            <button type="button" class="item-action-link primary details-trigger" data-detail-url="<?php echo htmlspecialchars($detailsUrl); ?>">Poke poster</button>
+                                        <?php endif; ?>
+                                    </div>
                                 </div>
-                            </article>
-                        </a>
+                            </div>
+                        </article>
                     <?php endforeach; ?>
+                </section>
+                <section class="empty-state search-empty-state" id="searchEmptyState">
+                    <h3>No matching items</h3>
+                    <p>Try a different keyword or switch the status filter to widen the search.</p>
                 </section>
             <?php else: ?>
                 <section class="empty-state">
                     <h3>No items found</h3>
-                    <p>There are no records for this filter yet. Try switching the status filter or post a new item to get started.</p>
+                    <p>There are no records for this filter yet. Try switching between active and claimed items or post a new item to get started.</p>
                 </section>
             <?php endif; ?>
         </div>
     </main>
+
+    <div class="auth-modal" id="authModal" aria-hidden="true">
+        <div class="auth-modal-card">
+            <h3>See full item details?</h3>
+            <p>Browse the posted items freely, but you need an account to open the full item details and contact the poster.</p>
+            <div class="auth-modal-actions">
+                <a class="auth-modal-link primary" href="login.php">Login</a>
+                <a class="auth-modal-link secondary" href="register.php">Register</a>
+                <button type="button" class="auth-modal-close" id="authModalClose">Maybe later</button>
+            </div>
+        </div>
+    </div>
 </body>
 </html>
